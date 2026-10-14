@@ -1,6 +1,11 @@
-# LLM Conversations Workspace
+# Multi-Conversation Antigravity Workspace
 
-This repository serves as a multi-topic workspace for Antigravity conversations. To keep unrelated topics cleanly separated, **every conversation is isolated within its own dedicated subfolder under [`conversations/`](conversations/)**.
+**Isolated per-conversation folders inside a single project.**
+
+Use a single project for all your day-to-day LLM conversations without cross-contaminating files or context:
+- **1 Conversation = 1 Subfolder**: Every new chat automatically works inside `conversations/<chat-title>/`.
+- **Zero Context Bleed**: The agent is scoped strictly to the active conversation's subfolder.
+- **UI-Synced Lifecycle**: Rename or delete a chat in the Antigravity sidebar and its subfolder is automatically renamed or cleaned up on disk.
 
 ---
 
