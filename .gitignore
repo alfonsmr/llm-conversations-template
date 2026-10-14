@@ -1,0 +1,4 @@
+.DS_Store
+.conversations.json
+.env
+.env.*

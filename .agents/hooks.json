@@ -1,0 +1,11 @@
+{
+  "sync-and-cleanup-conversations": {
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "python3 ./scripts/cleanup-conversations.py",
+        "timeout": 10
+      }
+    ]
+  }
+}
