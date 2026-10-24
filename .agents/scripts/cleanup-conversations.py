@@ -8,6 +8,49 @@ import re
 import shutil
 import sqlite3
 import sys
+import time
+
+TRASH_RETENTION_SECONDS = 30 * 24 * 60 * 60  # 30 days
+
+
+def move_to_trash(target_path: Path, trash_dir: Path, conv_id: str = "") -> Path | None:
+    """Safely move a conversation folder into .trash/ and reset its mtime."""
+    if not target_path.is_dir() or target_path.is_symlink():
+        return None
+    trash_dir.mkdir(parents=True, exist_ok=True)
+    base_name = target_path.name
+    dest = trash_dir / base_name
+    # Avoid collisions if a folder with the same name is already in .trash/
+    if dest.exists():
+        suffix = f"{conv_id[:6]}_{int(time.time())}" if conv_id else str(int(time.time()))
+        dest = trash_dir / f"{base_name}_{suffix}"
+    shutil.move(str(target_path), str(dest))
+    # Reset mtime to now so the 30-day countdown starts from deletion time
+    os.utime(dest, None)
+    return dest
+
+
+def cleanup_trash(trash_dir: Path, max_age_seconds: int = TRASH_RETENTION_SECONDS) -> list[str]:
+    """Permanently delete folders in .trash/ older than max_age_seconds."""
+    if not trash_dir.is_dir() or trash_dir.is_symlink():
+        return []
+    now = time.time()
+    purged: list[str] = []
+    resolved_trash = trash_dir.resolve()
+    for item in trash_dir.iterdir():
+        try:
+            # Never follow symlinks and verify item is a direct child of .trash/
+            if item.is_symlink() or not item.is_dir():
+                continue
+            if item.resolve().parent != resolved_trash:
+                continue
+            age = now - item.stat().st_mtime
+            if age > max_age_seconds:
+                shutil.rmtree(item, ignore_errors=True)
+                purged.append(item.name)
+        except Exception:
+            continue
+    return purged
 
 
 def slugify(title: str) -> str:
@@ -69,6 +112,7 @@ def main() -> None:
     try:
         workspace_root = Path(__file__).resolve().parent.parent.parent
         conversations_dir = workspace_root / "conversations"
+        trash_dir = workspace_root / ".trash"
         conversations_file = workspace_root / ".conversations.json"
 
         artifact_dir = payload.get("artifactDirectoryPath", "")
@@ -97,18 +141,19 @@ def main() -> None:
             if not conv_id:
                 continue
 
-            # 1. Check if conversation was deleted
+            # 1. Check if conversation was deleted -> move to .trash/
             if conv_id != current_conv_id and brain_accessible:
                 conv_brain_path = brain_dir / conv_id
                 if not conv_brain_path.exists():
                     target_path = is_safe_child(conversations_dir, subfolder)
                     if target_path and target_path.is_dir():
-                        shutil.rmtree(target_path, ignore_errors=True)
+                        trashed_path = move_to_trash(target_path, trash_dir, conv_id)
+                        if trashed_path:
+                            user_visible_events.append(
+                                f"Moved orphaned folder `conversations/{subfolder}/` to `.trash/{trashed_path.name}/` (conversation `{conv_id}` was deleted)."
+                            )
                     del mappings[conv_id]
                     updated = True
-                    user_visible_events.append(
-                        f"Deleted folder `conversations/{subfolder}/` (its conversation `{conv_id}` was deleted)."
-                    )
                     continue
 
             # 2. Check if conversation was renamed in the UI
@@ -133,6 +178,13 @@ def main() -> None:
                         user_visible_events.append(
                             f"Renamed folder `conversations/{subfolder}/` -> `conversations/{desired_slug}/` (to match conversation title \"{ui_title}\")."
                         )
+
+        # Purge .trash/ folders older than 30 days
+        purged_folders = cleanup_trash(trash_dir)
+        for folder_name in purged_folders:
+            user_visible_events.append(
+                f"Permanently deleted `.trash/{folder_name}/` (exceeded 30-day retention)."
+            )
 
         if updated:
             conversations_file.write_text(
