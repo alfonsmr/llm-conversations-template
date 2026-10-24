@@ -5,7 +5,7 @@
 Use a single project for all your day-to-day LLM conversations without cross-contaminating files or context:
 - **1 Conversation = 1 Subfolder**: Every new chat automatically works inside `conversations/<chat-title>/`.
 - **Zero Context Bleed**: The agent is scoped strictly to the active conversation's subfolder.
-- **UI-Synced Lifecycle**: Rename or delete a chat in the Antigravity sidebar and its subfolder is automatically renamed or cleaned up on disk.
+- **UI-Synced Lifecycle**: Rename or delete a chat in the Antigravity sidebar and its subfolder is automatically renamed or moved to `.trash/` on disk.
 
 ---
 
@@ -22,7 +22,7 @@ A `PreInvocation` hook ([`.agents/hooks.json`](.agents/hooks.json) → [`.agents
 
 - **Creating Subfolders**: For a new conversation, the hook reads the current conversation title from Antigravity's local SQLite database (`conversation_summaries.db`) and suggests a matching `conversations/<kebab-case-name>` folder to the agent.
 - **Renaming Subfolders**: If you rename a conversation in the Antigravity sidebar, the hook automatically detects the title change on the next turn, renames `conversations/<old-name>/` → `conversations/<new-name>/` on disk, updates `.conversations.json`, and instructs the agent to announce the rename in chat.
-- **Deleting Orphaned Subfolders**: If you delete a conversation in the Antigravity UI, its directory in `~/.gemini/antigravity/brain/<conversation-id>` is removed. On the next turn of any conversation, the hook detects that the brain directory no longer exists, deletes the orphaned `conversations/<subfolder-name>/` directory from the workspace, cleans up `.conversations.json`, and instructs the agent to announce the deletion in chat.
+- **Moving Deleted Conversations to Trash**: If you delete a conversation in the Antigravity UI, its directory in `~/.gemini/antigravity/brain/<conversation-id>` is removed. On the next turn of any conversation, the hook detects that the brain directory no longer exists, safely moves the orphaned `conversations/<subfolder-name>/` directory into `.trash/<subfolder-name>/` (git-ignored), cleans up `.conversations.json`, and instructs the agent to announce the move/deletion in chat. Folders in `.trash/` are retained for **30 days** before being permanently purged by the hook.
 
 ### 3. Chat Announcements
 Whenever a conversation subfolder is created, renamed, or deleted, the agent announces the change at the top of its response:
@@ -53,8 +53,9 @@ llm-conversations/
 │   ├── rules/
 │   │   └── conversation-isolation.md       # Workspace isolation & Git sync rules for the agent
 │   └── scripts/
-│       └── cleanup-conversations.py        # Syncs folder renames & deletes orphaned folders
+│       └── cleanup-conversations.py        # Syncs folder renames & moves deleted folders to .trash/
 ├── .conversations.json                     # Local Conversation ID -> subfolder map (git-ignored)
+├── .trash/                                 # Deleted conversation folders, auto-purged after 30 days (git-ignored)
 ├── .gitignore
 ├── README.md                               # Project documentation (only file in root)
 └── conversations/
